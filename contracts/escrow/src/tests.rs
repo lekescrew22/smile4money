@@ -1401,3 +1401,42 @@ fn test_player2_win_payout_full_pot() {
     assert_eq!(client.get_match(&id).state, MatchState::Completed);
     assert_eq!(client.get_escrow_balance(&id), 0);
 }
+
+#[test]
+fn test_match_ttl_is_extended() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &100,
+        &token,
+        &String::from_str(&env, "ttl_test"),
+        &Platform::Lichess,
+    );
+
+    let check_ttl =
+        |key: DataKey| env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+
+    // Verify TTL on creation
+    assert_eq!(check_ttl(DataKey::Match(id)), crate::MATCH_TTL_LEDGERS);
+    assert_eq!(check_ttl(DataKey::GameId(String::from_str(&env, "ttl_test"))), crate::MATCH_TTL_LEDGERS);
+
+    // Verify TTL on deposit (player 1)
+    client.deposit(&id, &player1);
+    assert_eq!(check_ttl(DataKey::Match(id)), crate::MATCH_TTL_LEDGERS);
+
+    // Verify TTL on activation (player 2 deposit)
+    client.deposit(&id, &player2);
+    assert_eq!(check_ttl(DataKey::Match(id)), crate::MATCH_TTL_LEDGERS);
+
+    // Verify TTL on completion
+    client.submit_result(
+        &id,
+        &String::from_str(&env, "ttl_test"),
+        &Winner::Player1,
+        &oracle,
+    );
+    assert_eq!(check_ttl(DataKey::Match(id)), crate::MATCH_TTL_LEDGERS);
+}
