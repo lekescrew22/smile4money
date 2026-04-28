@@ -1335,6 +1335,32 @@ fn test_submit_result_on_cancelled_match_no_deposit_fails() {
     );
 }
 
+// Issue #225: MatchCount overflow returns Error::Overflow instead of wrapping
+#[test]
+fn test_match_count_overflow_returns_error() {
+    let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    // Seed the counter at u64::MAX so the next increment would overflow
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::MatchCount, &u64::MAX);
+    });
+
+    assert_eq!(
+        client.try_create_match(
+            &player1,
+            &player2,
+            &100,
+            &token,
+            &String::from_str(&env, "overflow_game"),
+            &Platform::Lichess,
+        ),
+        Err(Ok(Error::Overflow))
+    );
+}
+
 // Issue #209 / Closes #36: Player2 win payout sends full pot to player2
 #[test]
 fn test_player2_win_payout_full_pot() {
