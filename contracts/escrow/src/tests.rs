@@ -384,6 +384,7 @@ fn test_submit_result_random_caller_is_unauthorized() {
     );
 }
 
+// Issue #196: submit_result on a Pending match should return InvalidState
 #[test]
 fn test_submit_result_on_pending_match_fails() {
     let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
@@ -408,6 +409,7 @@ fn test_submit_result_on_pending_match_fails() {
     );
 }
 
+// Issue #197: submit_result on an already Completed match should return InvalidState (no double-payout)
 #[test]
 fn test_submit_result_on_completed_match_fails() {
     let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
@@ -608,6 +610,7 @@ fn test_deposit_by_non_player_returns_unauthorized() {
     );
 }
 
+// Issue #195: is_funded returns false after only one player deposits, true after both
 #[test]
 fn test_is_funded_false_after_one_deposit() {
     let (env, contract_id, _oracle, player1, player2, token, _admin) = setup();
