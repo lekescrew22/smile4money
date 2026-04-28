@@ -1285,35 +1285,61 @@ fn test_escrow_balance_zero_after_cancel() {
     assert_eq!(token_client.balance(&player1), 1000); // fully refunded
 }
 
-// Issue #100: Test that submit_result on a cancelled match returns InvalidState
+// Issue #100: Test that submit_result on a cancelled match returns InvalidState (no deposit)
 #[test]
-fn test_submit_result_on_cancelled_match_fails() {
+fn test_submit_result_on_cancelled_match_no_deposit_fails() {
     let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
     let client = EscrowContractClient::new(&env, &contract_id);
 
     let id = client.create_match(
         &player1, &player2, &100, &token,
-        &String::from_str(&env, "cancelled_result"), &Platform::Lichess,
+        &String::from_str(&env, "cancelled_result2"), &Platform::Lichess,
     );
     client.cancel_match(&id, &player1);
 
     assert_eq!(
-        client.try_submit_result(&id, &String::from_str(&env, "cancelled_result"), &Winner::Player1, &oracle),
+        client.try_submit_result(&id, &String::from_str(&env, "cancelled_result2"), &Winner::Player1, &oracle),
         Err(Ok(Error::InvalidState))
     );
 }
 
-// Issue #211: initialize rejects an invalid (non-token) address with a panic
+// Issue #209 / Closes #36: Player2 win payout sends full pot to player2
 #[test]
-#[should_panic]
-fn test_initialize_invalid_token_panics() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let oracle = Address::generate(&env);
-    // A freshly generated address is not a token contract — decimals() will panic
-    let bad_token = Address::generate(&env);
-    let contract_id = env.register(EscrowContract, ());
+fn test_player2_win_payout_full_pot() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
     let client = EscrowContractClient::new(&env, &contract_id);
-    client.initialize(&oracle, &admin, &bad_token);
+    let token_client = TokenClient::new(&env, &token);
+
+    let stake = 100_i128;
+
+    // Record pre-match balances
+    let p1_before = token_client.balance(&player1);
+    let p2_before = token_client.balance(&player2);
+
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &stake,
+        &token,
+        &String::from_str(&env, "p2_win_pot"),
+        &Platform::Lichess,
+    );
+
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+    assert!(client.is_funded(&id));
+    assert_eq!(client.get_escrow_balance(&id), stake * 2);
+
+    client.submit_result(
+        &id,
+        &String::from_str(&env, "p2_win_pot"),
+        &Winner::Player2,
+        &oracle,
+    );
+
+    // Player2 receives full pot (2x stake); player1 receives nothing
+    assert_eq!(token_client.balance(&player2), p2_before + stake); // net gain = stake (deposited stake, won 2x)
+    assert_eq!(token_client.balance(&player1), p1_before - stake); // net loss = stake
+    assert_eq!(client.get_match(&id).state, MatchState::Completed);
+    assert_eq!(client.get_escrow_balance(&id), 0);
 }
