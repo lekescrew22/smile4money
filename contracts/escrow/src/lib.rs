@@ -304,20 +304,25 @@ impl EscrowContract {
 
         let client = token::Client::new(&env, &m.token);
 
+        let payout_amount: i128 = match winner {
+            Winner::Draw => m.stake_amount,
+            _ => m.stake_amount * 2,
+        };
+
         match winner {
             Winner::Player1 => client.transfer(
                 &env.current_contract_address(),
                 &m.player1,
-                &(m.stake_amount * 2),
+                &payout_amount,
             ),
             Winner::Player2 => client.transfer(
                 &env.current_contract_address(),
                 &m.player2,
-                &(m.stake_amount * 2),
+                &payout_amount,
             ),
             Winner::Draw => {
-                client.transfer(&env.current_contract_address(), &m.player1, &m.stake_amount);
-                client.transfer(&env.current_contract_address(), &m.player2, &m.stake_amount);
+                client.transfer(&env.current_contract_address(), &m.player1, &payout_amount);
+                client.transfer(&env.current_contract_address(), &m.player2, &payout_amount);
             }
         }
 
@@ -335,7 +340,7 @@ impl EscrowContract {
         );
 
         let topics = (Symbol::new(&env, "match"), symbol_short!("completed"));
-        env.events().publish(topics, (match_id, winner));
+        env.events().publish(topics, (match_id, winner, payout_amount));
 
         Ok(())
     }

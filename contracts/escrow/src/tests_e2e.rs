@@ -124,9 +124,10 @@ fn test_e2e_lifecycle_player1_wins() {
         .iter()
         .find(|(_, t, _)| *t == completed_topics)
         .expect("completed event not found");
-    let (ev_id, ev_winner): (u64, Winner) = TryFromVal::try_from_val(&env, &data).unwrap();
+    let (ev_id, ev_winner, ev_payout): (u64, Winner, i128) = TryFromVal::try_from_val(&env, &data).unwrap();
     assert_eq!(ev_id, match_id);
     assert_eq!(ev_winner, Winner::Player1);
+    assert_eq!(ev_payout, stake * 2);
 
     // State: Completed
     let m = client.get_match(&match_id);

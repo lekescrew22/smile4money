@@ -472,6 +472,36 @@ fn test_submit_result_wrong_game_id_fails() {
 }
 
 #[test]
+fn test_submit_result_emits_event() {
+    let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    let stake: i128 = 100;
+    let id = client.create_match(
+        &player1,
+        &player2,
+        &stake,
+        &token,
+        &String::from_str(&env, "event_game"),
+        &Platform::Lichess,
+    );
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+    client.submit_result(&id, &String::from_str(&env, "event_game"), &Winner::Player1, &oracle);
+
+    let events = env.events().all();
+    let last = events.last().unwrap();
+    assert_eq!(last.0, contract_id);
+    assert_eq!(Symbol::try_from_val(&env, &last.1.get(0).unwrap()).unwrap(), Symbol::new(&env, "match"));
+    assert_eq!(Symbol::try_from_val(&env, &last.1.get(1).unwrap()).unwrap(), symbol_short!("completed"));
+    let (ev_id, ev_winner, ev_payout): (u64, Winner, i128) =
+        TryFromVal::try_from_val(&env, &last.2).unwrap();
+    assert_eq!(ev_id, id);
+    assert_eq!(ev_winner, Winner::Player1);
+    assert_eq!(ev_payout, stake * 2);
+}
+
+#[test]
 #[should_panic(expected = "Contract already initialized")]
 fn test_double_initialize_fails() {
     let env = Env::default();
