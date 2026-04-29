@@ -718,38 +718,59 @@ fn test_update_oracle() {
 }
 
 #[test]
-fn test_pause_blocks_create_and_submit() {
+fn test_pause_blocks_all_state_changing_operations() {
     let (env, contract_id, oracle, player1, player2, token, _admin) = setup();
     let client = EscrowContractClient::new(&env, &contract_id);
 
+    // Create a match to test deposit and cancel when paused
     let id = client.create_match(
         &player1,
         &player2,
         &100,
         &token,
-        &String::from_str(&env, "paused_game"),
+        &String::from_str(&env, "pause_test"),
         &Platform::Lichess,
     );
-    client.deposit(&id, &player1);
-    client.deposit(&id, &player2);
 
     client.pause();
 
+    // 1. Block create_match
     assert_eq!(
         client.try_create_match(
             &player1,
             &player2,
             &100,
             &token,
-            &String::from_str(&env, "paused2"),
+            &String::from_str(&env, "paused_create"),
             &Platform::Lichess,
         ),
         Err(Ok(Error::ContractPaused))
     );
+
+    // 2. Block deposit
+    assert_eq!(
+        client.try_deposit(&id, &player1),
+        Err(Ok(Error::ContractPaused))
+    );
+
+    // 3. Block cancel_match
+    assert_eq!(
+        client.try_cancel_match(&id, &player1),
+        Err(Ok(Error::ContractPaused))
+    );
+
+    // Now unpause to create an active match for submit_result test
+    client.unpause();
+    client.deposit(&id, &player1);
+    client.deposit(&id, &player2);
+
+    client.pause();
+
+    // 4. Block submit_result
     assert_eq!(
         client.try_submit_result(
             &id,
-            &String::from_str(&env, "paused_game"),
+            &String::from_str(&env, "pause_test"),
             &Winner::Player1,
             &oracle
         ),
@@ -757,28 +778,21 @@ fn test_pause_blocks_create_and_submit() {
     );
 
     client.unpause();
-    let id2 = client.create_match(
-        &player1,
-        &player2,
-        &100,
-        &token,
-        &String::from_str(&env, "unpaused_game"),
-        &Platform::Lichess,
+    // Verify it works after unpause
+    client.submit_result(
+        &id,
+        &String::from_str(&env, "pause_test"),
+        &Winner::Player1,
+        &oracle,
     );
-    assert_eq!(id2, 1);
+    assert_eq!(client.get_match(&id).state, MatchState::Completed);
 }
 
 #[test]
 fn test_non_admin_cannot_pause() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let non_admin = Address::generate(&env);
-    let oracle = Address::generate(&env);
-    let token_addr = env.register_stellar_asset_contract_v2(admin.clone()).address();
-    let contract_id = env.register(EscrowContract, ());
+    let (env, contract_id, _oracle, _player1, _player2, _token, _admin) = setup();
     let client = EscrowContractClient::new(&env, &contract_id);
-    client.initialize(&oracle, &admin, &token_addr);
+    let non_admin = Address::generate(&env);
 
     use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
     env.set_auths(&[MockAuth {
@@ -793,6 +807,53 @@ fn test_non_admin_cannot_pause() {
     .into()]);
 
     assert!(client.try_pause().is_err());
+}
+
+#[test]
+fn test_non_admin_cannot_unpause() {
+    let (env, contract_id, _oracle, _player1, _player2, _token, _admin) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let non_admin = Address::generate(&env);
+
+    client.pause();
+
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    env.set_auths(&[MockAuth {
+        address: &non_admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "unpause",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }
+    .into()]);
+
+    assert!(client.try_unpause().is_err());
+}
+
+#[test]
+fn test_pause_unpause_events() {
+    let (env, contract_id, _, _, _, _, _) = setup();
+    let client = EscrowContractClient::new(&env, &contract_id);
+
+    client.pause();
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+    assert_eq!(last_event.0, contract_id);
+    assert_eq!(last_event.1.len(), 2);
+    assert_eq!(Symbol::try_from_val(&env, &last_event.1.get(0).unwrap()).unwrap(), Symbol::new(&env, "admin"));
+    assert_eq!(Symbol::try_from_val(&env, &last_event.1.get(1).unwrap()).unwrap(), symbol_short!("paused"));
+    assert!(<()>::try_from_val(&env, &last_event.2).is_ok());
+
+    client.unpause();
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+    assert_eq!(last_event.0, contract_id);
+    assert_eq!(last_event.1.len(), 2);
+    assert_eq!(Symbol::try_from_val(&env, &last_event.1.get(0).unwrap()).unwrap(), Symbol::new(&env, "admin"));
+    assert_eq!(Symbol::try_from_val(&env, &last_event.1.get(1).unwrap()).unwrap(), symbol_short!("unpaused"));
+    assert!(<()>::try_from_val(&env, &last_event.2).is_ok());
 }
 
 #[test]
@@ -916,8 +977,8 @@ fn test_deposit_emits_event() {
     assert!(matched.is_some());
 
     let (_, _, data) = matched.unwrap();
-    let (ev_id, ev_player): (u64, Address) = TryFromVal::try_from_val(&env, &data).unwrap();
-    assert_eq!((ev_id, ev_player), (id, player1));
+    let (ev_id, ev_player, ev_amount): (u64, Address, i128) = TryFromVal::try_from_val(&env, &data).unwrap();
+    assert_eq!((ev_id, ev_player, ev_amount), (id, player1, 100));
 }
 
 #[test]
@@ -1442,3 +1503,4 @@ fn test_cancel_match_refunds_only_player1_when_only_player1_deposited() {
     // Match must be in Cancelled state
     assert_eq!(client.get_match(&id).state, MatchState::Cancelled);
 }
+
