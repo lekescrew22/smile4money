@@ -169,7 +169,7 @@ impl EscrowContract {
 
         env.events().publish(
             (Symbol::new(&env, "match"), symbol_short!("created")),
-            (id, m.player1.clone(), m.player2.clone(), stake_amount),
+            (id, m.player1.clone(), m.player2.clone(), stake_amount, m.game_id.clone()),
         );
 
         Ok(id)
@@ -343,6 +343,9 @@ impl EscrowContract {
     /// Cancel a pending match and refund any deposits.
     /// Either player can cancel a pending match.
     pub fn cancel_match(env: Env, match_id: u64, caller: Address) -> Result<(), Error> {
+        if Self::is_paused(&env) {
+            return Err(Error::ContractPaused);
+        }
         let mut m: Match = env
             .storage()
             .persistent()
@@ -432,3 +435,6 @@ impl EscrowContract {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_e2e;
