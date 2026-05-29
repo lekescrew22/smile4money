@@ -1,41 +1,17 @@
-import React from 'react';
 import { ClaimBurn } from './components/claim-burn';
-import { useStellarWallet } from './hooks/useStellarWallet';
+import { useWallet } from './hooks/useWallet';
 
 export function App() {
-  const wallet = useStellarWallet();
-
-  async function handleClaim(amount: string) {
-    const addr = wallet.address;
-    if (!addr) throw new Error('Wallet not connected');
-    console.log(`Claiming ${amount} XLM for ${addr}`);
-    await new Promise((r) => setTimeout(r, 1000));
-    wallet.refreshBalance();
-  }
-
-  async function handleBurn(amount: string) {
-    const addr = wallet.address;
-    if (!addr) throw new Error('Wallet not connected');
-    console.log(`Burning ${amount} XLM from ${addr}`);
-    await new Promise((r) => setTimeout(r, 1000));
-    wallet.refreshBalance();
-  }
+  const { state, publicKey, expectedNetwork, connect, switchNetwork } = useWallet();
 
   return (
-    <main>
+    <main style={{ padding: '2rem', minHeight: '100vh', background: '#f5f5f5' }}>
       <ClaimBurn
-        walletState={{
-          status: wallet.status,
-          address: wallet.address,
-          error: wallet.error,
-          balance: wallet.balance,
-          network: wallet.network,
-        }}
-        onConnect={wallet.connect}
-        onDisconnect={wallet.disconnect}
-        onRefreshBalance={wallet.refreshBalance}
-        onClaim={handleClaim}
-        onBurn={handleBurn}
+        walletState={state}
+        onConnect={connect}
+        onSwitchNetwork={switchNetwork}
+        publicKey={publicKey}
+        expectedNetwork={expectedNetwork}
       />
     </main>
   );
