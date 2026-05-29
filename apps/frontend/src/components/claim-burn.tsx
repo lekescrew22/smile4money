@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { WalletState, Mode } from '../types';
 
 interface ClaimBurnProps {
@@ -16,14 +16,25 @@ function formatAddress(addr: string): string {
   return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
 }
 
+function parseDecimalCount(val: string): number {
+  const dot = val.indexOf('.');
+  return dot === -1 ? 0 : val.length - dot - 1;
+}
+
+function stripTrailingZeros(val: string): string {
+  if (!val.includes('.')) return val;
+  return val.replace(/\.?0+$/, '');
+}
+
+function isDisabledKey(key: string): boolean {
+  return key === 'e' || key === 'E' || key === '+' || key === '-';
+}
+
 function isValidAmount(val: string): boolean {
   if (val === '' || val === '.') return false;
   const n = Number(val);
   if (Number.isNaN(n) || n <= 0) return false;
-
-  const parts = val.split('.');
-  if (parts.length === 2 && parts[1].length > STROOP_DECIMALS) return false;
-
+  if (parseDecimalCount(val) > STROOP_DECIMALS) return false;
   return true;
 }
 
@@ -45,10 +56,38 @@ export function ClaimBurn({
   const [status, setStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
+
+  const balanceNum = useMemo(
+    () => (walletState.balance !== null ? Number(walletState.balance) : null),
+    [walletState.balance],
+  );
+
+  const exceedsBalance = useMemo(
+    () =>
+      mode === 'burn' &&
+      balanceNum !== null &&
+      isValidAmount(amount) &&
+      Number(amount) > balanceNum,
+    [amount, balanceNum, mode],
+  );
+
+  const valid = isValidAmount(amount) && !exceedsBalance;
+
+  function handleMax() {
+    if (walletState.balance !== null) {
+      setAmount(stripTrailingZeros(walletState.balance));
+      setTouched(true);
+      if (status !== 'idle' && status !== 'pending') {
+        setStatus('idle');
+        setTxHash(null);
+      }
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!isValidAmount(amount)) return;
+    if (!valid) return;
 
     setStatus('pending');
     setErrorMsg('');
@@ -63,6 +102,7 @@ export function ClaimBurn({
       if (hash) setTxHash(hash);
       setStatus('success');
       setAmount('');
+      setTouched(false);
     } catch (err) {
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Transaction failed');
@@ -71,19 +111,32 @@ export function ClaimBurn({
 
   function handleAmountChange(e: React.ChangeEvent<HTMLInputElement>) {
     setAmount(e.target.value);
+    setTouched(true);
     if (status !== 'idle' && status !== 'pending') {
       setStatus('idle');
       setTxHash(null);
     }
   }
 
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (isDisabledKey(e.key)) {
+      e.preventDefault();
+    }
+  }
+
   function handleToggle(newMode: Mode) {
     setMode(newMode);
+    setTouched(false);
     if (status !== 'idle' && status !== 'pending') {
       setStatus('idle');
       setTxHash(null);
     }
   }
+
+  const renderDecimalError =
+    touched && amount && parseDecimalCount(amount) > STROOP_DECIMALS;
+  const renderNegativeError =
+    touched && amount && !isValidAmount(amount) && !renderDecimalError;
 
   if (walletState.status === 'disconnected') {
     return (
@@ -137,8 +190,6 @@ export function ClaimBurn({
     );
   }
 
-  const valid = isValidAmount(amount);
-
   return (
     <div className="claim-burn" data-testid="claim-burn">
       <div className="wallet-info">
@@ -190,31 +241,56 @@ export function ClaimBurn({
           {mode === 'claim' ? 'Amount to claim' : 'Amount to burn'}
           {walletState.balance !== null && (
             <span className="balance-hint">
-              (Balance: {walletState.balance} XLM)
+              Balance: {walletState.balance} XLM
             </span>
           )}
         </label>
-        <div className="input-wrap">
-          <input
-            id="amount"
-            type="number"
-            min="0"
-            step="any"
-            value={amount}
-            onChange={handleAmountChange}
-            placeholder="0.00"
-            disabled={status === 'pending'}
-            data-testid="amount-input"
-          />
-          <span className="input-suffix">XLM</span>
+
+        <div className="input-row">
+          <div className="input-wrap">
+            <input
+              id="amount"
+              type="number"
+              min="0"
+              step="any"
+              value={amount}
+              onChange={handleAmountChange}
+              onKeyDown={handleKeyDown}
+              placeholder="0.00"
+              disabled={status === 'pending'}
+              data-testid="amount-input"
+            />
+            <span className="input-suffix">XLM</span>
+          </div>
+          {walletState.balance !== null && mode === 'burn' && (
+            <button
+              type="button"
+              className="btn btn-max"
+              onClick={handleMax}
+              disabled={status === 'pending'}
+              data-testid="max-btn"
+            >
+              Max
+            </button>
+          )}
         </div>
-        {amount && !valid && (
+
+        {touched && renderDecimalError && (
           <p className="field-error" data-testid="amount-error">
-            {amount.split('.').length === 2 && amount.split('.')[1].length > STROOP_DECIMALS
-              ? `Maximum ${STROOP_DECIMALS} decimal places`
-              : 'Enter a valid positive amount'}
+            Maximum {STROOP_DECIMALS} decimal places
           </p>
         )}
+        {touched && renderNegativeError && (
+          <p className="field-error" data-testid="amount-error">
+            Enter a valid positive amount
+          </p>
+        )}
+        {exceedsBalance && (
+          <p className="field-error" data-testid="balance-error">
+            Amount exceeds your balance of {walletState.balance} XLM
+          </p>
+        )}
+
         <button
           type="submit"
           className={`btn btn-${mode}`}

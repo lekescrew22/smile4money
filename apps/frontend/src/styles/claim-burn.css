@@ -84,6 +84,21 @@
   background: #dc2626;
 }
 
+.btn-max {
+  padding: 0.65rem 1rem;
+  font-size: 0.8rem;
+  background: #eef2ff;
+  color: #6366f1;
+  border-radius: 8px;
+  white-space: nowrap;
+  border: 1px solid #c7d2fe;
+}
+
+.btn-max:hover:not(:disabled) {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
+
 /* Network badge */
 .network-badge {
   display: inline-block;
@@ -182,6 +197,17 @@
   margin-left: 0.5rem;
   font-weight: 400;
   color: #94a3b8;
+}
+
+.input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.input-row .input-wrap {
+  flex: 1;
+  min-width: 0;
 }
 
 .input-wrap {
@@ -329,5 +355,13 @@
 
   .wallet-info-actions {
     justify-content: center;
+  }
+
+  .input-row {
+    flex-direction: column;
+  }
+
+  .btn-max {
+    align-self: flex-end;
   }
 }

@@ -304,6 +304,62 @@ describe('ClaimBurn — transaction hash', () => {
   });
 });
 
+describe('ClaimBurn — Max button', () => {
+  it('shows Max button in burn mode when balance is available', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: '500' })} />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    expect(screen.getByTestId('max-btn')).toBeInTheDocument();
+  });
+
+  it('does not show Max button in claim mode', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: '500' })} />);
+    expect(screen.queryByTestId('max-btn')).not.toBeInTheDocument();
+  });
+
+  it('does not show Max button when balance is null', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: null })} />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    expect(screen.queryByTestId('max-btn')).not.toBeInTheDocument();
+  });
+
+  it('fills amount with balance when Max clicked', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: '250.5' })} />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    fireEvent.click(screen.getByTestId('max-btn'));
+    expect(screen.getByTestId('amount-input')).toHaveValue(250.5);
+  });
+
+  it('enables submit after clicking Max', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: '100' })} />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    fireEvent.click(screen.getByTestId('max-btn'));
+    expect(screen.getByTestId('submit-btn')).toBeEnabled();
+  });
+});
+
+describe('ClaimBurn — balance validation', () => {
+  it('disables submit when burn amount exceeds balance', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: '100' })} />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '200' } });
+    expect(screen.getByTestId('submit-btn')).toBeDisabled();
+  });
+
+  it('shows balance error when burn amount exceeds balance', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: '100' })} />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '200' } });
+    expect(screen.getByTestId('balance-error')).toHaveTextContent('exceeds your balance');
+  });
+
+  it('does not check balance in claim mode', () => {
+    render(<ClaimBurn walletState={connectedWallet({ balance: '100' })} />);
+    fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '200' } });
+    expect(screen.queryByTestId('balance-error')).not.toBeInTheDocument();
+    expect(screen.getByTestId('submit-btn')).toBeEnabled();
+  });
+});
+
 describe('ClaimBurn — balance display', () => {
   it('shows balance when provided', () => {
     render(<ClaimBurn walletState={connectedWallet({ balance: '1000' })} />);

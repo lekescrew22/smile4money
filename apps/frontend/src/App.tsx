@@ -10,6 +10,7 @@ export function App() {
     if (!addr) throw new Error('Wallet not connected');
     console.log(`Claiming ${amount} XLM for ${addr}`);
     await new Promise((r) => setTimeout(r, 1000));
+    wallet.refreshBalance();
   }
 
   async function handleBurn(amount: string) {
@@ -17,6 +18,7 @@ export function App() {
     if (!addr) throw new Error('Wallet not connected');
     console.log(`Burning ${amount} XLM from ${addr}`);
     await new Promise((r) => setTimeout(r, 1000));
+    wallet.refreshBalance();
   }
 
   return (
