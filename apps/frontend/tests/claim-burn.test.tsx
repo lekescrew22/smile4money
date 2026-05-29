@@ -4,8 +4,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { ClaimBurn } from '../src/components/claim-burn';
 
 describe('ClaimBurn — wallet states', () => {
-  it('shows connect button when disconnected', () => {
+  it('shows checking/connecting spinner while loading', () => {
+    render(<ClaimBurn walletState="checking" />);
+    expect(screen.getByTestId('wallet-connecting')).toBeInTheDocument();
+  });
+
+  it('shows connect prompt when disconnected', () => {
     render(<ClaimBurn walletState="disconnected" />);
+    expect(screen.getByTestId('wallet-disconnected')).toBeInTheDocument();
     expect(screen.getByTestId('connect-wallet-btn')).toBeInTheDocument();
   });
 
@@ -18,12 +24,48 @@ describe('ClaimBurn — wallet states', () => {
 
   it('shows connecting state', () => {
     render(<ClaimBurn walletState="connecting" />);
-    expect(screen.getByTestId('connecting-msg')).toBeInTheDocument();
+    expect(screen.getByTestId('wallet-connecting')).toBeInTheDocument();
+  });
+
+  it('shows notInstalled state', () => {
+    render(<ClaimBurn walletState="notInstalled" />);
+    expect(screen.getByTestId('wallet-not-installed')).toBeInTheDocument();
+    expect(screen.getByText(/Freighter Not Found/i)).toBeInTheDocument();
+  });
+
+  it('shows wrongNetwork state', () => {
+    render(<ClaimBurn walletState="wrongNetwork" expectedNetwork="testnet" />);
+    expect(screen.getByTestId('wallet-wrong-network')).toBeInTheDocument();
+    expect(screen.getByText('Wrong Network')).toBeInTheDocument();
+    expect(screen.getByTestId('switch-network-btn')).toHaveTextContent('Switch to testnet');
+  });
+
+  it('calls onSwitchNetwork when switch network button clicked', () => {
+    const onSwitchNetwork = vi.fn();
+    render(
+      <ClaimBurn
+        walletState="wrongNetwork"
+        onSwitchNetwork={onSwitchNetwork}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('switch-network-btn'));
+    expect(onSwitchNetwork).toHaveBeenCalledOnce();
   });
 
   it('shows form when connected', () => {
     render(<ClaimBurn walletState="connected" />);
     expect(screen.getByTestId('claim-burn-form')).toBeInTheDocument();
+  });
+
+  it('shows wallet info when publicKey provided', () => {
+    render(
+      <ClaimBurn
+        walletState="connected"
+        publicKey="GABCDEF1234567890XYZ"
+      />,
+    );
+    expect(screen.getByTestId('wallet-info')).toBeInTheDocument();
+    expect(screen.getByText(/GABC/)).toBeInTheDocument();
   });
 });
 
@@ -40,6 +82,14 @@ describe('ClaimBurn — toggle', () => {
     expect(screen.getByTestId('toggle-burn')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('submit-btn')).toHaveTextContent('Burn');
   });
+
+  it('switches back to claim mode', () => {
+    render(<ClaimBurn walletState="connected" />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    fireEvent.click(screen.getByTestId('toggle-claim'));
+    expect(screen.getByTestId('toggle-claim')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('submit-btn')).toHaveTextContent('Claim');
+  });
 });
 
 describe('ClaimBurn — submit', () => {
@@ -52,16 +102,44 @@ describe('ClaimBurn — submit', () => {
     expect(onClaim).toHaveBeenCalledWith('10');
   });
 
+  it('calls onBurn with amount', async () => {
+    const onBurn = vi.fn().mockResolvedValue(undefined);
+    render(<ClaimBurn walletState="connected" onBurn={onBurn} />);
+    fireEvent.click(screen.getByTestId('toggle-burn'));
+    fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '25' } });
+    fireEvent.click(screen.getByTestId('submit-btn'));
+    await waitFor(() => expect(screen.getByTestId('success-msg')).toBeInTheDocument());
+    expect(onBurn).toHaveBeenCalledWith('25');
+  });
+
   it('shows error on failure', async () => {
     const onClaim = vi.fn().mockRejectedValue(new Error('Insufficient balance'));
     render(<ClaimBurn walletState="connected" onClaim={onClaim} />);
     fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '5' } });
     fireEvent.click(screen.getByTestId('submit-btn'));
-    await waitFor(() => expect(screen.getByTestId('error-msg')).toHaveTextContent('Insufficient balance'));
+    await waitFor(() =>
+      expect(screen.getByTestId('error-msg')).toHaveTextContent('Insufficient balance'),
+    );
+  });
+
+  it('resets status on amount change after error', async () => {
+    const onClaim = vi.fn().mockRejectedValue(new Error('Fail'));
+    render(<ClaimBurn walletState="connected" onClaim={onClaim} />);
+    fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '5' } });
+    fireEvent.click(screen.getByTestId('submit-btn'));
+    await waitFor(() => expect(screen.getByTestId('error-msg')).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '10' } });
+    expect(screen.queryByTestId('error-msg')).not.toBeInTheDocument();
   });
 
   it('disables submit when amount is empty', () => {
     render(<ClaimBurn walletState="connected" />);
+    expect(screen.getByTestId('submit-btn')).toBeDisabled();
+  });
+
+  it('disables submit when amount is zero', () => {
+    render(<ClaimBurn walletState="connected" />);
+    fireEvent.change(screen.getByTestId('amount-input'), { target: { value: '0' } });
     expect(screen.getByTestId('submit-btn')).toBeDisabled();
   });
 });
